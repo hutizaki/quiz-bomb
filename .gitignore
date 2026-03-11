@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.db
+*.sqlite
+*.sqlite3
+data/
+.DS_Store
+*.log
+.env.local
+.env.*.local

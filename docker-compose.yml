@@ -1,0 +1,16 @@
+# Optional: local SQLite is used by default (file in server/data/)
+# Use this if you want to run DB in Docker later (e.g. PostgreSQL)
+version: '3'
+services:
+  # server runs locally with: cd server && npm run dev
+  # client runs locally with: cd client && npm run dev
+  # No required services for default SQLite setup.
+  app:
+    build: .
+    ports:
+      - "2567:2567"
+    environment:
+      - PORT=2567
+      - DATABASE_PATH=/data/quizbomb.db
+    volumes:
+      - ./server/data:/data

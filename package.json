@@ -1,0 +1,13 @@
+{
+  "name": "quizbomb",
+  "private": true,
+  "description": "Word Bomb-style multiplayer word game",
+  "scripts": {
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npm run build",
+    "start:server": "cd server && npm start",
+    "tunnel": "cloudflared tunnel --url http://localhost:5174"
+  }
+}

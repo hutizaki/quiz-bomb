@@ -1,0 +1,28 @@
+What is the type of: fun x -> x~'a -> 'a,'a->'a
+What is the type of: fun x -> x + 1~int -> int,int->int
+What is the type of: fun x -> x ^ "!"~string -> string,string->string
+What is the type of: fun x -> (x,x)~'a -> 'a * 'a,'a->'a*'a
+What is the type of: fun x y -> x~'a -> 'b -> 'a,'a->'b->'a
+What is the type of: fun x y -> y~'a -> 'b -> 'b,'a->'b->'b
+What is the type of: fun x y -> (x,y)~'a -> 'b -> 'a * 'b,'a->'b->'a*'b
+What is the type of: fun x y -> x + y~int -> int -> int,int->int->int
+What is the type of: fun f x -> f x~('a -> 'b) -> 'a -> 'b,('a->'b)->'a->'b
+What is the type of: fun f x -> f (f x)~('a -> 'a) -> 'a -> 'a,('a->'a)->'a->'a
+What is the type of: fun f g x -> f (g x)~('b -> 'c) -> ('a -> 'b) -> 'a -> 'c,('b->'c)->('a->'b)->'a->'c
+What is the type of: fun f g x -> g (f x)~('a -> 'b) -> ('b -> 'c) -> 'a -> 'c,('a->'b)->('b->'c)->'a->'c
+What is the type of: fun f x -> (f x,x)~('a -> 'b) -> 'a -> 'b * 'a,('a->'b)->'a->'b*'a
+What is the type of: fun f x -> (x,f x)~('a -> 'b) -> 'a -> 'a * 'b,('a->'b)->'a->'a*'b
+What is the type of: fun f g x -> (f x,g x)~('a -> 'b) -> ('a -> 'c) -> 'a -> 'b * 'c,('a->'b)->('a->'c)->'a->'b*'c
+What is the type of: fun x -> Some x~'a -> 'a option,'a->'a option
+What is the type of: fun x -> None~'a -> 'b option,'a->'b option
+What is the type of: fun xs -> xs @ xs~'a list -> 'a list,'a list->'a list
+What is the type of: fun x -> [x]~'a -> 'a list,'a->'a list
+What is the type of: fun x y -> [x;y]~'a -> 'a -> 'a list,'a->'a->'a list
+What is the type of: fun (x,y) -> x~'a * 'b -> 'a,('a*'b)->'a
+What is the type of: fun (x,y) -> y~'a * 'b -> 'b,('a*'b)->'b
+What is the type of: fun (x,y) -> (y,x)~'a * 'b -> 'b * 'a,('a*'b)->'b*'a
+What is the type of: fun f x y -> f (x,y)~('a * 'b -> 'c) -> 'a -> 'b -> 'c,('a*'b->'c)->'a->'b->'c
+What is the type of: fun f (x,y) -> f x y~('a -> 'b -> 'c) -> 'a * 'b -> 'c,('a->'b->'c)->('a*'b)->'c
+What is the type of: fun f x -> f (f (f x))~('a -> 'a) -> 'a -> 'a,('a->'a)->'a->'a
+What is the type of: fun f g x -> f (g (f x))~('b -> 'c) -> ('a -> 'b) -> 'a -> 'c,('b->'c)->('a->'b)->'a->'c
+What is the type of: fun f g x -> g (f (g x))~('a -> 'b) -> ('b -> 'a) -> 'b -> 'a,('a->'b)->('b->'a)->'b->'a
