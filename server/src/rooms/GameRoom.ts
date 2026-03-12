@@ -17,6 +17,11 @@ const TYPING_MAX_LENGTH = 30
 
 const usedRoomCodes = new Set<string>()
 
+/** Normalize for validation: trim, lowercase, remove all spaces (so "Answer One" matches "answer one"). */
+function normalizeForValidation(word: string): string {
+  return (word || '').trim().toLowerCase().replace(/\s+/g, '')
+}
+
 function generateRoomCode(): string {
   let code: string
   do {
@@ -102,7 +107,7 @@ export class GameRoom extends Room<GameState> {
         const round = this.getRandomUnusedCustomRound()
         if (round) {
           this.state.prompt = round.prompt
-          this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+          this.currentRoundAnswers = new Set(round.answers.map((a) => normalizeForValidation(a)).filter(Boolean))
           this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
         }
       } else {
@@ -142,50 +147,50 @@ export class GameRoom extends Room<GameState> {
     this.onMessage('submit_word', (client: Client, payload: { word: string }) => {
       if (this.state.phase !== 'PLAYING') return
       if (this.state.bombHolderSessionId !== client.sessionId) return
-      const word = (payload?.word || '').trim()
-      if (!word) return
+      const wordDisplay = (payload?.word || '').trim()
+      if (!wordDisplay) return
       const player = this.state.players.get(client.sessionId)
       if (!player || player.lives <= 0) return
 
       this.state.currentWordInProgress = ''
 
-      const wordLower = word.toLowerCase()
+      const normalized = normalizeForValidation(wordDisplay)
 
       if (this.currentRoundAnswers !== null) {
-        if (!this.currentRoundAnswers.has(wordLower)) {
+        if (!this.currentRoundAnswers.has(normalized)) {
           this.broadcast('word_result', { sessionId: client.sessionId, success: false, reason: 'wrong' })
           return
         }
-        if (this.wordsUsedThisRound.has(wordLower)) {
+        if (this.wordsUsedThisRound.has(normalized)) {
           this.broadcast('word_result', { sessionId: client.sessionId, success: false, reason: 'duplicate' })
           return
         }
-        this.wordsUsedThisRound.add(wordLower)
-        const points = Math.min(10 + word.length, 25)
+        this.wordsUsedThisRound.add(normalized)
+        const points = Math.min(10 + wordDisplay.length, 25)
         player.score += points
-        this.broadcast('word_result', { sessionId: client.sessionId, success: true, word: wordLower, points })
+        this.broadcast('word_result', { sessionId: client.sessionId, success: true, word: wordDisplay, points, prompt: this.state.prompt, playerName: player.name })
         this.passBombToNext(true)
         return
       }
 
       const prompt = this.state.prompt
-      if (!wordLower.includes(prompt.toLowerCase())) {
+      if (!normalized.includes(normalizeForValidation(prompt))) {
         this.broadcast('word_result', { sessionId: client.sessionId, success: false, reason: 'wrong' })
         return
       }
-      if (!isValidWord(word, prompt)) {
+      if (!isValidWord(normalized, prompt)) {
         this.broadcast('word_result', { sessionId: client.sessionId, success: false, reason: 'invalid' })
         return
       }
-      if (this.wordsUsedThisRound.has(wordLower)) {
+      if (this.wordsUsedThisRound.has(normalized)) {
         this.broadcast('word_result', { sessionId: client.sessionId, success: false, reason: 'duplicate' })
         return
       }
 
-      this.wordsUsedThisRound.add(wordLower)
-      const points = Math.min(10 + word.length, 25)
+      this.wordsUsedThisRound.add(normalized)
+      const points = Math.min(10 + wordDisplay.length, 25)
       player.score += points
-      this.broadcast('word_result', { sessionId: client.sessionId, success: true, word: wordLower, points })
+      this.broadcast('word_result', { sessionId: client.sessionId, success: true, word: wordDisplay, points, prompt: this.state.prompt, playerName: player.name })
       this.passBombToNext(true)
     })
   }
@@ -237,7 +242,7 @@ export class GameRoom extends Room<GameState> {
       const round = this.getRandomUnusedCustomRound()
       if (round) {
         this.state.prompt = round.prompt
-        this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+        this.currentRoundAnswers = new Set(round.answers.map((a) => normalizeForValidation(a)).filter(Boolean))
         this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
       }
     } else {
@@ -281,6 +286,9 @@ export class GameRoom extends Room<GameState> {
 
   private onRoundTimeUp() {
     const holder = this.state.bombHolderSessionId
+    if (this.currentRoundAnswers !== null) {
+      this.broadcast('qa_no_answer', { prompt: this.state.prompt })
+    }
     if (holder) {
       this.loseLife(holder)
       this.broadcast('word_result', { sessionId: holder, success: false, reason: 'timeout' })
@@ -315,6 +323,7 @@ export class GameRoom extends Room<GameState> {
         this.state.timerRemaining = 0
         this.state.roundEndsAt = 0
         this.state.lastServerTimeMs = 0
+        this.broadcast('qa_no_answer', { prompt: this.state.prompt, revealedAnswer: this.currentRoundFirstAnswer })
         return
       }
       if (shouldChangeQuestion) {
@@ -323,7 +332,7 @@ export class GameRoom extends Room<GameState> {
           const round = this.getRandomUnusedCustomRound()
           if (round) {
             this.state.prompt = round.prompt
-            this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+            this.currentRoundAnswers = new Set(round.answers.map((a) => normalizeForValidation(a)).filter(Boolean))
             this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
           }
           this.wordsUsedThisRound.clear()

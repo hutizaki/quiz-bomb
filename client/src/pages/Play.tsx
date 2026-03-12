@@ -32,6 +32,11 @@ export function Play() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [parsedRounds, setParsedRounds] = useState<ParsedRound[] | null>(null)
   const [uploadInvalidLines, setUploadInvalidLines] = useState(0)
+  type ChatEntry =
+    | { id: number; type: 'correct'; prompt: string; answer: string; playerName: string }
+    | { id: number; type: 'missed'; prompt: string; revealedAnswer?: string }
+  const [qaChatEntries, setQaChatEntries] = useState<ChatEntry[]>([])
+  const chatIdRef = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const gameRootRef = useRef<HTMLDivElement>(null)
   const typingInputRef = useRef<HTMLDivElement | null>(null)
@@ -144,6 +149,13 @@ export function Play() {
     }
   }, [phase])
 
+  // Clear Q&A chat when returning to lobby (new game)
+  useEffect(() => {
+    if (phase === 'LOBBY') {
+      setQaChatEntries([])
+    }
+  }, [phase])
+
   // Play joined sound when lobby player count increases (someone joined)
   useEffect(() => {
     if (!room) return
@@ -159,14 +171,26 @@ export function Play() {
   }, [room, stateTick])
 
   useEffect(() => {
-    room?.onMessage('word_result', (payload: { sessionId: string; success: boolean; reason?: string; word?: string; points?: number }) => {
+    room?.onMessage('word_result', (payload: { sessionId: string; success: boolean; reason?: string; word?: string; points?: number; prompt?: string; playerName?: string }) => {
       if (payload.success) {
         setFeedback({ type: 'success', message: `+${payload.points ?? 0} pts!` })
+        if (payload.prompt != null && payload.word != null) {
+          const name = payload.playerName ?? 'Someone'
+          setQaChatEntries((prev) => [...prev, { id: ++chatIdRef.current, type: 'correct', prompt: payload.prompt!, answer: payload.word!, playerName: name }])
+        }
       } else {
         const msg = payload.reason === 'duplicate' ? 'Already used' : payload.reason === 'timeout' ? 'Time up!' : 'Wrong word'
         setFeedback({ type: 'error', message: msg })
       }
       setTimeout(() => setFeedback(null), 1500)
+    })
+  }, [room])
+
+  useEffect(() => {
+    room?.onMessage('qa_no_answer', (payload: { prompt?: string; revealedAnswer?: string }) => {
+      if (payload.prompt != null) {
+        setQaChatEntries((prev) => [...prev, { id: ++chatIdRef.current, type: 'missed', prompt: payload.prompt!, revealedAnswer: payload.revealedAnswer }])
+      }
     })
   }, [room])
 
@@ -994,6 +1018,60 @@ export function Play() {
           waitingForName={!isMyTurn ? players.find((p) => p.sessionId === bombHolder)?.name : undefined}
         />
       </div>
+
+      {/* Right-side Q&A chat: question + answer when someone gets it right; red when no one got it */}
+      {phase === 'PLAYING' && (
+        <div
+          style={{
+            position: 'fixed',
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 280,
+            zIndex: 100,
+            background: 'rgba(15,23,42,0.96)',
+            borderLeft: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', fontSize: 14, fontWeight: 700, color: '#f1f5f9', flexShrink: 0 }}>
+            Q&A
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+            {qaChatEntries.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Correct answers and missed questions will appear here.</p>
+            ) : (
+              qaChatEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  style={{
+                    marginBottom: 14,
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.04)',
+                    borderRadius: 'var(--radius)',
+                    borderLeft: `3px solid ${entry.type === 'correct' ? 'var(--accent)' : '#e57373'}`,
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+                    {entry.prompt}
+                  </p>
+                  {entry.type === 'correct' ? (
+                    <p style={{ margin: '6px 0 0', fontSize: 14, color: '#e2e8f0' }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>{entry.playerName}:</span> {entry.answer}
+                    </p>
+                  ) : (
+                    <p style={{ margin: '6px 0 0', fontSize: 13, color: '#e57373' }}>
+                      No one got it.{entry.revealedAnswer != null && entry.revealedAnswer !== '' ? ` Answer: ${entry.revealedAnswer}` : ''}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
