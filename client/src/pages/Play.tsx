@@ -83,6 +83,7 @@ export function Play() {
     : 'prompt'
   const learningModePaused = room ? (room.state as { learningModePaused?: boolean })?.learningModePaused ?? false : false
   const revealedAnswer = room ? (room.state as { revealedAnswer?: string })?.revealedAnswer ?? '' : ''
+  const gamePaused = room ? (room.state as { gamePaused?: boolean })?.gamePaused ?? false : false
 
   // Keep local wordInput in sync with turn: when I become holder, seed from server once; when I stop being holder, clear
   const prevIsMyTurnRef = useRef(false)
@@ -188,8 +189,10 @@ export function Play() {
 
   useEffect(() => {
     room?.onMessage('qa_no_answer', (payload: { prompt?: string; revealedAnswer?: string }) => {
-      if (payload.prompt != null) {
-        setQaChatEntries((prev) => [...prev, { id: ++chatIdRef.current, type: 'missed', prompt: payload.prompt!, revealedAnswer: payload.revealedAnswer }])
+      // Only add to chat when we have an answer to show (e.g. learning mode reveal); skip when it's just a timeout with nothing to show
+      const answer = (payload.revealedAnswer ?? '').trim()
+      if (payload.prompt != null && answer !== '') {
+        setQaChatEntries((prev) => [...prev, { id: ++chatIdRef.current, type: 'missed', prompt: payload.prompt!, revealedAnswer: answer }])
       }
     })
   }, [room])
@@ -394,6 +397,17 @@ export function Play() {
           >
             ⚙
           </button>
+          {phase === 'PLAYING' && isHost && !gamePaused && !learningModePaused && (
+            <button
+              type="button"
+              onClick={() => room?.send('set_pause', { paused: true })}
+              aria-label="Pause game"
+              style={iconButtonStyle}
+              title="Pause game"
+            >
+              ⏸
+            </button>
+          )}
           <button type="button" onClick={handleLeave} aria-label="Leave game" style={{ ...iconButtonStyle, color: 'var(--error)' }} title="Leave game">
             ←
           </button>
@@ -986,6 +1000,44 @@ export function Play() {
             </button>
           </div>
         )}
+        {phase === 'PLAYING' && gamePaused && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 60,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 20,
+              background: 'rgba(0,0,0,0.6)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '1.5rem', color: '#f1f5f9', fontWeight: 700, textAlign: 'center' }}>
+              Game paused
+            </p>
+            {isHost && (
+              <button
+                type="button"
+                onClick={() => room?.send('set_pause', { paused: false })}
+                style={{
+                  padding: '0.6rem 1.25rem',
+                  background: 'var(--accent)',
+                  border: 'none',
+                  borderRadius: 'var(--radius)',
+                  color: '#fff',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Resume
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Typing input — positioned using the same config constants as the test page so
@@ -1009,7 +1061,7 @@ export function Play() {
           value={isMyTurn ? wordInput : currentWordInProgress}
           onChange={handleTypingChange}
           onSubmit={handleSubmitWord}
-          disabled={phase !== 'PLAYING'}
+          disabled={phase !== 'PLAYING' || gamePaused}
           placeholder={gameMode === 'qa' ? 'Type your answer…' : 'Type a word…'}
           feedback={feedback}
           positionMode="belowPrompt"

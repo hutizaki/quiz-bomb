@@ -29,4 +29,6 @@ export class GameState extends Schema {
   @type('boolean') learningModePaused = false
   /** When learningModePaused, the first correct answer to show in green. */
   @type('string') revealedAnswer = ''
+  /** When true, host has paused the game; timer stops until they resume. */
+  @type('boolean') gamePaused = false
 }

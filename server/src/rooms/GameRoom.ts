@@ -98,6 +98,27 @@ export class GameRoom extends Room<GameState> {
       this.state.learningMode = payload?.enabled ?? !this.state.learningMode
     })
 
+    this.onMessage('set_pause', (client: Client, payload: { paused?: boolean }) => {
+      if (this.state.phase !== 'PLAYING') return
+      if (this.hostSessionId !== client.sessionId) return
+      if (this.state.learningModePaused) return
+      const paused = payload?.paused ?? !this.state.gamePaused
+      this.state.gamePaused = paused
+      if (paused) {
+        if (this.timerInterval) {
+          this.timerInterval.clear()
+          this.timerInterval = null
+        }
+        this.state.roundEndsAt = 0
+        this.state.lastServerTimeMs = 0
+      } else {
+        const now = Date.now()
+        this.state.roundEndsAt = now + this.state.timerRemaining * 1000
+        this.state.lastServerTimeMs = now
+        this.startTimer()
+      }
+    })
+
     this.onMessage('next_question', (_client: Client) => {
       if (this.state.phase !== 'PLAYING' || !this.state.learningModePaused) return
       this.state.learningModePaused = false
@@ -137,7 +158,7 @@ export class GameRoom extends Room<GameState> {
     })
 
     this.onMessage('typing_update', (client: Client, payload: { word?: string }) => {
-      if (this.state.phase !== 'PLAYING') return
+      if (this.state.phase !== 'PLAYING' || this.state.gamePaused) return
       if (this.state.bombHolderSessionId !== client.sessionId) return
       const raw = typeof payload?.word === 'string' ? payload.word : ''
       const sanitized = raw.trim().slice(0, TYPING_MAX_LENGTH)
@@ -145,7 +166,7 @@ export class GameRoom extends Room<GameState> {
     })
 
     this.onMessage('submit_word', (client: Client, payload: { word: string }) => {
-      if (this.state.phase !== 'PLAYING') return
+      if (this.state.phase !== 'PLAYING' || this.state.gamePaused) return
       if (this.state.bombHolderSessionId !== client.sessionId) return
       const wordDisplay = (payload?.word || '').trim()
       if (!wordDisplay) return
@@ -233,6 +254,7 @@ export class GameRoom extends Room<GameState> {
 
     this.gameStartTime = this.gameStartTime || Date.now()
     this.state.phase = 'PLAYING'
+    this.state.gamePaused = false
     this.state.learningModePaused = false
     this.state.revealedAnswer = ''
     this.wordsUsedThisRound.clear()
@@ -273,6 +295,7 @@ export class GameRoom extends Room<GameState> {
       this.timerInterval = null
     }
     this.timerInterval = this.clock.setInterval(() => {
+      if (this.state.gamePaused) return
       this.state.timerRemaining = Math.max(0, this.state.timerRemaining - 1)
       if (this.state.timerRemaining <= 0) {
         if (this.timerInterval) {
@@ -419,6 +442,7 @@ export class GameRoom extends Room<GameState> {
     this.state.roundEndsAt = 0
     this.state.lastServerTimeMs = 0
     this.state.currentWordInProgress = ''
+    this.state.gamePaused = false
     this.state.learningModePaused = false
     this.state.revealedAnswer = ''
     this.state.players.forEach((p) => {
