@@ -35,8 +35,10 @@ export class GameRoom extends Room<GameState> {
   private gameStartTime = 0
   private hostSessionId: string | null = null
   private customRounds: { prompt: string; answers: string[] }[] | null = null
-  private customRoundIndex = 0
+  private customRoundsUsedIndices = new Set<number>()
   private currentRoundAnswers: Set<string> | null = null
+  /** First answer of current round (for learning mode reveal). */
+  private currentRoundFirstAnswer: string | null = null
   /** SessionId of the player who had the bomb when the current question was set; question only changes when bomb returns to them or someone gets it right */
   private questionStartedWithHolder: string | null = null
 
@@ -85,6 +87,37 @@ export class GameRoom extends Room<GameState> {
       this.state.gameMode = mode
     })
 
+    this.onMessage('set_learning_mode', (client: Client, payload: { enabled?: boolean }) => {
+      if (this.state.phase !== 'LOBBY') return
+      if (this.hostSessionId !== client.sessionId) return
+      this.state.learningMode = payload?.enabled ?? !this.state.learningMode
+    })
+
+    this.onMessage('next_question', (_client: Client) => {
+      if (this.state.phase !== 'PLAYING' || !this.state.learningModePaused) return
+      this.state.learningModePaused = false
+      this.state.revealedAnswer = ''
+      this.questionStartedWithHolder = this.state.bombHolderSessionId
+      if (this.customRounds !== null && this.customRounds.length > 0) {
+        const round = this.getRandomUnusedCustomRound()
+        if (round) {
+          this.state.prompt = round.prompt
+          this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+          this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
+        }
+      } else {
+        this.state.prompt = getRandomPrompt(this.state.players.size)
+        this.currentRoundAnswers = null
+        this.currentRoundFirstAnswer = null
+      }
+      this.wordsUsedThisRound.clear()
+      this.state.timerRemaining = this.state.roundTimeSeconds
+      const now = Date.now()
+      this.state.roundEndsAt = now + this.state.roundTimeSeconds * 1000
+      this.state.lastServerTimeMs = now
+      this.startTimer()
+    })
+
     this.onMessage('set_questions', (client: Client, payload: { rounds?: { prompt: string; answers: string[] }[] }) => {
       if (this.state.phase !== 'LOBBY') return
       if (this.hostSessionId !== client.sessionId) return
@@ -95,7 +128,7 @@ export class GameRoom extends Room<GameState> {
       )
       if (rounds.length === 0) return
       this.customRounds = rounds
-      this.customRoundIndex = 0
+      this.customRoundsUsedIndices.clear()
     })
 
     this.onMessage('typing_update', (client: Client, payload: { word?: string }) => {
@@ -182,6 +215,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private startRound() {
+    this.customRoundsUsedIndices.clear()
     const alive = this.getAlivePlayers()
     if (alive.length === 0) {
       this.endGame(null)
@@ -194,17 +228,22 @@ export class GameRoom extends Room<GameState> {
 
     this.gameStartTime = this.gameStartTime || Date.now()
     this.state.phase = 'PLAYING'
+    this.state.learningModePaused = false
+    this.state.revealedAnswer = ''
     this.wordsUsedThisRound.clear()
     this.state.currentWordInProgress = ''
 
     if (this.customRounds !== null && this.customRounds.length > 0) {
-      const round = this.customRounds[this.customRoundIndex % this.customRounds.length]
-      this.customRoundIndex += 1
-      this.state.prompt = round.prompt
-      this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+      const round = this.getRandomUnusedCustomRound()
+      if (round) {
+        this.state.prompt = round.prompt
+        this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+        this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
+      }
     } else {
       this.state.prompt = getRandomPrompt(this.state.players.size)
       this.currentRoundAnswers = null
+      this.currentRoundFirstAnswer = null
     }
 
     const order = Array.from(this.state.players.keys()).filter((id: unknown) => {
@@ -265,17 +304,33 @@ export class GameRoom extends Room<GameState> {
     const shouldChangeQuestion = fromCorrectAnswer || newHolder === this.questionStartedWithHolder
 
     if (this.state.phase === 'PLAYING') {
+      const everyoneMissed = shouldChangeQuestion && !fromCorrectAnswer && newHolder === this.questionStartedWithHolder
+      if (everyoneMissed && this.state.learningMode && this.currentRoundFirstAnswer !== null) {
+        if (this.timerInterval) {
+          this.timerInterval.clear()
+          this.timerInterval = null
+        }
+        this.state.learningModePaused = true
+        this.state.revealedAnswer = this.currentRoundFirstAnswer
+        this.state.timerRemaining = 0
+        this.state.roundEndsAt = 0
+        this.state.lastServerTimeMs = 0
+        return
+      }
       if (shouldChangeQuestion) {
         this.questionStartedWithHolder = newHolder
         if (this.customRounds !== null && this.customRounds.length > 0) {
-          const round = this.customRounds[this.customRoundIndex % this.customRounds.length]
-          this.customRoundIndex += 1
-          this.state.prompt = round.prompt
-          this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+          const round = this.getRandomUnusedCustomRound()
+          if (round) {
+            this.state.prompt = round.prompt
+            this.currentRoundAnswers = new Set(round.answers.map((a) => a.trim().toLowerCase()).filter(Boolean))
+            this.currentRoundFirstAnswer = round.answers[0]?.trim() ?? null
+          }
           this.wordsUsedThisRound.clear()
         } else {
           this.state.prompt = getRandomPrompt(this.state.players.size)
           this.currentRoundAnswers = null
+          this.currentRoundFirstAnswer = null
         }
       }
       this.state.timerRemaining = this.state.roundTimeSeconds
@@ -284,6 +339,20 @@ export class GameRoom extends Room<GameState> {
       this.state.lastServerTimeMs = now
       this.startTimer()
     }
+  }
+
+  /** Picks a random custom round not yet used this game; if all used, resets and picks from full set. */
+  private getRandomUnusedCustomRound(): { prompt: string; answers: string[] } | null {
+    if (!this.customRounds || this.customRounds.length === 0) return null
+    const len = this.customRounds.length
+    let available = Array.from({ length: len }, (_, i) => i).filter((i) => !this.customRoundsUsedIndices.has(i))
+    if (available.length === 0) {
+      this.customRoundsUsedIndices.clear()
+      available = Array.from({ length: len }, (_, i) => i)
+    }
+    const idx = available[Math.floor(Math.random() * available.length)]!
+    this.customRoundsUsedIndices.add(idx)
+    return this.customRounds[idx]!
   }
 
   private getAlivePlayers(): [string, PlayerState][] {
@@ -341,6 +410,8 @@ export class GameRoom extends Room<GameState> {
     this.state.roundEndsAt = 0
     this.state.lastServerTimeMs = 0
     this.state.currentWordInProgress = ''
+    this.state.learningModePaused = false
+    this.state.revealedAnswer = ''
     this.state.players.forEach((p) => {
       p.lives = this.state.initialLives
       p.score = 0

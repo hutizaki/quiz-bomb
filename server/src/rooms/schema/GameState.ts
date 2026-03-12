@@ -23,4 +23,10 @@ export class GameState extends Schema {
   @type('string') currentWordInProgress = ''
   /** Game mode: 'prompt' = word-bomb with letter prompts; 'qa' = Q&A with custom questions. Host can change in lobby. */
   @type('string') gameMode = 'prompt'
+  /** When true, if everyone misses and bomb returns to starter, game pauses and shows answer until "Next question". */
+  @type('boolean') learningMode = false
+  /** True while paused in learning mode (showing revealed answer; waiting for next_question). */
+  @type('boolean') learningModePaused = false
+  /** When learningModePaused, the first correct answer to show in green. */
+  @type('string') revealedAnswer = ''
 }

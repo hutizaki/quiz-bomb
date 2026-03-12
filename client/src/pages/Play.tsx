@@ -76,6 +76,8 @@ export function Play() {
   const gameMode = room
     ? ((room.state as { gameMode?: string })?.gameMode ?? 'prompt')
     : 'prompt'
+  const learningModePaused = room ? (room.state as { learningModePaused?: boolean })?.learningModePaused ?? false : false
+  const revealedAnswer = room ? (room.state as { revealedAnswer?: string })?.revealedAnswer ?? '' : ''
 
   // Keep local wordInput in sync with turn: when I become holder, seed from server once; when I stop being holder, clear
   const prevIsMyTurnRef = useRef(false)
@@ -551,6 +553,10 @@ export function Play() {
           const sendGameMode = (mode: 'prompt' | 'qa') => {
             if (isHost) room?.send('set_game_mode', { mode })
           }
+          const learningMode = (state as { learningMode?: boolean })?.learningMode ?? false
+          const sendLearningMode = (enabled: boolean) => {
+            if (isHost) room?.send('set_learning_mode', { enabled })
+          }
           return (
             <>
               <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setSettingsModalOpen(false)} />
@@ -666,6 +672,42 @@ export function Play() {
                     Q&A mode requires custom questions (upload via the questions icon).
                   </p>
                 )}
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 16, marginBottom: 8 }}>Learning mode</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={learningMode}
+                    onClick={() => sendLearningMode(!learningMode)}
+                    disabled={!isHost}
+                    style={{
+                      width: 44,
+                      height: 24,
+                      borderRadius: 12,
+                      border: 'none',
+                      background: learningMode ? 'var(--accent)' : 'rgba(255,255,255,0.2)',
+                      cursor: isHost ? 'pointer' : 'default',
+                      position: 'relative',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: 2,
+                        left: learningMode ? 22 : 2,
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: '#fff',
+                        transition: 'left 0.15s ease',
+                      }}
+                    />
+                  </button>
+                  <span style={{ fontSize: 12, color: '#f1f5f9' }}>
+                    {learningMode ? 'On' : 'Off'} — when a question goes full circle unanswered, show the answer and pause until "Next question"
+                  </span>
+                </div>
                 {!isHost && (
                   <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--muted)' }}>Only the host can change settings.</p>
                 )}
@@ -884,6 +926,42 @@ export function Play() {
           fullHeight
           postGame={postGameActive}
         />
+        {phase === 'PLAYING' && learningModePaused && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 60,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 20,
+              background: 'rgba(0,0,0,0.6)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '1.25rem', color: '#22c55e', fontWeight: 700, textAlign: 'center' }}>
+              Answer: {revealedAnswer}
+            </p>
+            <button
+              type="button"
+              onClick={() => room?.send('next_question')}
+              style={{
+                padding: '0.6rem 1.25rem',
+                background: 'var(--accent)',
+                border: 'none',
+                borderRadius: 'var(--radius)',
+                color: '#fff',
+                fontSize: '1rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Next question
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Typing input — positioned using the same config constants as the test page so
